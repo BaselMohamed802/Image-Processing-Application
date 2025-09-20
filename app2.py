@@ -5,8 +5,6 @@ import numpy as np
 from PIL import Image
 from io import BytesIO
 import base64
-
-# Custom Created Module (by you!)
 import imageprocessing as ipm  
 
 st.set_page_config(page_title="Image Processing Studio", layout="wide")
