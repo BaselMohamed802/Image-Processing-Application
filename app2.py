@@ -79,7 +79,7 @@ if uploaded_file:
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Original")
-        st.image(convert_opencv_to_pil(image), use_container_width=True)
+        st.image(convert_opencv_to_pil(image), width='stretch')
 
     # ---------------- SINGLE OPERATION MODE ---------------- #
     if mode == "Single Operation":
@@ -253,11 +253,11 @@ if uploaded_file:
 
                     with col_mask:
                         st.subheader("Mask Preview")
-                        st.image(mask, use_container_width=True, caption="Binary Mask (white = selected)")
+                        st.image(mask, width='stretch', caption="Binary Mask (white = selected)")
 
                     with col_result:
                         st.subheader("Processed with Mask")
-                        st.image(convert_opencv_to_pil(processed_img), use_container_width=True)
+                        st.image(convert_opencv_to_pil(processed_img), width='stretch')
 
         elif operation_category == "Histogram":
             option = st.sidebar.selectbox("Select Function", ["Equalize Gray", "Equalize Color", "CLAHE Gray", "CLAHE Color"])
@@ -359,7 +359,7 @@ if uploaded_file:
         if processed_img is not None:
             with col2:
                 st.subheader("Processed")
-                st.image(convert_opencv_to_pil(processed_img), use_container_width=True)
+                st.image(convert_opencv_to_pil(processed_img), width='stretch')
 
             pil_img = convert_opencv_to_pil(processed_img)
             st.markdown(get_download_link(pil_img), unsafe_allow_html=True)
@@ -411,7 +411,7 @@ if uploaded_file:
         if processed_img is not None:
             with col2:
                 st.subheader("Pipeline Output")
-                st.image(convert_opencv_to_pil(processed_img), use_container_width=True)
+                st.image(convert_opencv_to_pil(processed_img), width='stretch')
 
             pil_img = convert_opencv_to_pil(processed_img)
             st.markdown(get_download_link(pil_img, filename="pipeline_output.png"), unsafe_allow_html=True)
