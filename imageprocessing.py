@@ -81,6 +81,18 @@ def resize_image(image, width=None, height=None, fx=None, fy=None, interpolation
             return cv2.resize(image, None, fx=float(sx), fy=float(sy), interpolation=interpolation)
         case _:
             raise ValueError("Provide either both (width, height) as positive integers, or both (fx, fy) as positive numbers.")
+
+def translate_image(image, x_shift, y_shift):
+    """Shifts an image along the X and Y axes."""
+    matrix = np.float32([[1, 0, x_shift], [0, 1, y_shift]])
+    (h, w) = image.shape[:2]
+    return cv2.warpAffine(image, matrix, (w, h))
+
+def crop_image(image, x, y, w, h):
+    """Crops an image based on bounding box coordinates."""
+    if x < 0 or y < 0 or y+h > image.shape[0] or x+w > image.shape[1]:
+        raise ValueError("Crop dimensions exceed image boundaries.")
+    return image[y:y+h, x:x+w]
         
 # ---- 3. Filtering & Smoothing Functions ---- #
 def average_blur(image, kernel_size=(5, 5)):
@@ -436,19 +448,29 @@ def apply_clahe_color(image, clip_limit=2.0, tile_grid_size=(8, 8)):
         case _:
             raise ValueError("Invalid tile grid size. Must be a tuple of two positive integers (e.g., (8, 8)).")
         
-# ---- 7. Contours and Drawing ---- #
+# ---- 7. Contours and Drawing + Perspective Warping ---- #
 
-def find_and_draw_contours(image, method, thresh_val=127, rtr_type=cv2.RETR_EXTERNAL, rtr_approximation=cv2.CHAIN_APPROX_SIMPLE, border_color=(0, 255, 0), line_thickness=3):
-    """Finds and draws contours safely on either grayscale/binary masks or BGR images."""
+def find_and_draw_contours(image, mask, method, rtr_type=cv2.RETR_EXTERNAL, rtr_approximation=cv2.CHAIN_APPROX_SIMPLE, border_color=(0, 255, 0), line_thickness=3):
+    """
+    Finds and draws contours on an image using a provided binary mask without automatic thresholding.
+    inputs:
+        image: input image to draw the contours on (BGR or grayscale).
+        mask: binary mask (8-bit single channel) used to find contours.
+        method: drawing method ('Rectangle', 'Circle', 'Ellipse', 'Polygon', 'Normal').
+        rtr_type: contour retrieval mode (e.g., cv2.RETR_EXTERNAL).
+        rtr_approximation: contour approximation method (e.g., cv2.CHAIN_APPROX_SIMPLE).
+        border_color: BGR tuple for the contour color.
+        line_thickness: thickness of the drawn contours.
+    outputs:
+        image_copy: The image with contours drawn on it.
+        contours: The list of contours found (useful for passing to perspective_warp).
+    """
     if len(image.shape) == 2:
-        gray_image = image
         image_copy = convert_gray_to_bgr(image)
     else:
-        gray_image = convert_to_grayscale(image)
         image_copy = image.copy()
-
-    _, thresh = cv2.threshold(gray_image, thresh_val, 255, cv2.THRESH_BINARY)
-    contours, _ = cv2.findContours(thresh, rtr_type, rtr_approximation)
+        
+    contours, _ = cv2.findContours(mask, rtr_type, rtr_approximation)
     
     match method:
         case 'Rectangle':
@@ -458,9 +480,7 @@ def find_and_draw_contours(image, method, thresh_val=127, rtr_type=cv2.RETR_EXTE
         case 'Circle':
             for contour in contours:
                 (x, y), radius = cv2.minEnclosingCircle(contour)
-                center = (int(x), int(y))
-                radius = int(radius)
-                cv2.circle(image_copy, center, radius, border_color, line_thickness)
+                cv2.circle(image_copy, (int(x), int(y)), int(radius), border_color, line_thickness)
         case 'Ellipse':
             for contour in contours:
                 if len(contour) >= 5: 
@@ -475,7 +495,73 @@ def find_and_draw_contours(image, method, thresh_val=127, rtr_type=cv2.RETR_EXTE
             cv2.drawContours(image_copy, contours, -1, border_color, line_thickness)
         case _:
             raise ValueError("Invalid method. Must be 'Rectangle', 'Circle', 'Ellipse', 'Polygon', or 'Normal'.")
-    return image_copy
+            
+    return image_copy, contours
+
+def find_and_draw_contours_thresh(image, method, thresh_mode='Normal', thresh_val=127, max_val=255, 
+                                  threshold_type=cv2.THRESH_BINARY, adaptive_method=cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                  block_size=11, C=2, rtr_type=cv2.RETR_EXTERNAL, 
+                                  rtr_approximation=cv2.CHAIN_APPROX_SIMPLE, border_color=(0, 255, 0), line_thickness=3):
+    """
+    Finds and draws contours by automatically applying thresholding methods from Section 5.
+    inputs:
+        image: input image (grayscale or BGR).
+        method: drawing method ('Rectangle', 'Circle', 'Ellipse', 'Polygon', 'Normal').
+        thresh_mode: 'Normal', 'Adaptive', or 'Otsu' (calls the respective Section 5 functions).
+        thresh_val: minimum threshold value for Normal thresholding.
+        max_val: maximum threshold value (typically 255).
+        threshold_type: OpenCV threshold type (e.g., cv2.THRESH_BINARY).
+        adaptive_method: cv2.ADAPTIVE_THRESH_GAUSSIAN_C or cv2.ADAPTIVE_THRESH_MEAN_C.
+        block_size: Block size for adaptive thresholding.
+        C: Constant subtracted from the mean in adaptive thresholding.
+        rtr_type: contour retrieval mode.
+        rtr_approximation: contour approximation method.
+        border_color: BGR tuple for the contour color.
+        line_thickness: thickness of the drawn contours.
+    """
+    if len(image.shape) == 2:
+        gray_image = image
+        image_copy = convert_gray_to_bgr(image)
+    else:
+        gray_image = convert_to_grayscale(image)
+        image_copy = image.copy()
+
+    # Route to the appropriate Section 5 thresholding function
+    match thresh_mode:
+        case 'Normal':
+            thresh = binary_thresholding(gray_image, thresh_val, max_val, threshold_type)
+        case 'Adaptive':
+            thresh = adaptive_thresholding(gray_image, max_val, adaptive_method, threshold_type, block_size, C)
+        case 'Otsu':
+            thresh = otsu_thresholding(gray_image, 0, max_val, threshold_type)
+        case _:
+            raise ValueError("Invalid thresh_mode. Must be 'Normal', 'Adaptive', or 'Otsu'.")
+
+    # Delegate drawing and contour extraction to the base function
+    return find_and_draw_contours(image_copy, thresh, method, rtr_type, rtr_approximation, border_color, line_thickness)
+
+
+def perspective_warp(image, src_points, dst_points, output_size):
+    """
+    Applies a perspective warp to the input image based on provided source and destination points.
+    inputs:
+        image: input image to be warped.
+        src_points: 4 source points in the original image (numpy array of shape (4, 2)).
+        dst_points: 4 destination points in the output image (numpy array of shape (4, 2)).
+        output_size: tuple (width, height) for the size of the output warped image.
+    outputs:
+        warped_image: The cropped and perspective-corrected image.
+    """
+    # OpenCV's perspective transform requires float32 arrays
+    src_pts = np.array(src_points, dtype=np.float32)
+    dst_pts = np.array(dst_points, dtype=np.float32)
+    
+    match (src_pts.shape, dst_pts.shape):
+        case ((4, 2), (4, 2)):
+            matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+            return cv2.warpPerspective(image, matrix, output_size)
+        case _:
+            raise ValueError("src_points and dst_points must each contain exactly 4 coordinates (x, y).")
 
 # ---- 8. Color Extraction & Palette ---- #
 
@@ -732,3 +818,171 @@ def replace_background_chroma(image, lower_bound, upper_bound, replacement_bg):
     
     # Combine foreground and background
     return cv2.add(foreground, background)
+
+# ---- 11. Image Pyramids & Resampling ---- #
+
+def upsample(image, scale_factor=2):
+    """
+    Upsamples the input image by a power of 2 using a Gaussian Pyramid.
+    Inputs:
+        image: Input image to be upsampled.
+        scale_factor: Factor to upsample (must be a power of 2: 2, 4, 8). Default is 2.
+    """
+    match scale_factor:
+        case int(f) if f > 1 and (f & (f - 1) == 0):
+            upsampled_image = image.copy()
+            levels = int(np.log2(f))
+            for _ in range(levels):
+                upsampled_image = cv2.pyrUp(upsampled_image)
+            return upsampled_image
+        case _:
+            raise ValueError("Invalid scale_factor. Must be an integer > 1 and a power of 2 (e.g., 2, 4, 8).")
+
+def downsample(image, scale_factor=2):
+    """
+    Downsamples the input image by a power of 2 using a Gaussian Pyramid.
+    Inputs:
+        image: Input image to be downsampled.
+        scale_factor: Factor to downsample (must be a power of 2: 2, 4, 8). Default is 2.
+    """
+    match scale_factor:
+        case int(f) if f > 1 and (f & (f - 1) == 0):
+            downsampled_image = image.copy()
+            levels = int(np.log2(f))
+            for _ in range(levels):
+                downsampled_image = cv2.pyrDown(downsampled_image)
+            return downsampled_image
+        case _:
+            raise ValueError("Invalid scale_factor. Must be an integer > 1 and a power of 2 (e.g., 2, 4, 8).")
+
+def build_laplacian_pyramid(image, levels=3):
+    """
+    Builds a Laplacian Pyramid, capturing the high-frequency edge data lost during downsampling.
+    Crucial for image blending and detailed scale-invariant feature extraction.
+    Inputs:
+        image: Input image.
+        levels: Number of pyramid levels to generate.
+    Outputs:
+        laplacian_pyramid: A list of images representing the edges at each scale level.
+    """
+    match levels:
+        case int(L) if L > 0:
+            # 1. Build the Gaussian Pyramid first
+            gaussian_pyramid = [image.copy()]
+            temp_image = image.copy()
+            for _ in range(L):
+                temp_image = cv2.pyrDown(temp_image)
+                gaussian_pyramid.append(temp_image)
+                
+            # 2. Build the Laplacian Pyramid from the Gaussian layers
+            laplacian_pyramid = []
+            for i in range(L, 0, -1):
+                # Upsample the smaller Gaussian layer
+                gaussian_expanded = cv2.pyrUp(gaussian_pyramid[i])
+                
+                # Ensure dimensions match exactly before subtraction (handles odd-pixel resolutions)
+                target_size = (gaussian_pyramid[i-1].shape[1], gaussian_pyramid[i-1].shape[0])
+                if gaussian_expanded.shape[:2] != (target_size[1], target_size[0]):
+                    gaussian_expanded = cv2.resize(gaussian_expanded, target_size)
+                    
+                # The Laplacian is the difference between the current Gaussian layer and the expanded smaller layer
+                laplacian = cv2.subtract(gaussian_pyramid[i-1], gaussian_expanded)
+                laplacian_pyramid.append(laplacian)
+                
+            return laplacian_pyramid
+        case _:
+            raise ValueError("Levels must be an integer greater than 0.")
+
+def resample_high_quality(image, scale_factor):
+    """
+    Resamples an image to any arbitrary scale factor using high-fidelity interpolation, 
+    bypassing the strict power-of-2 limitations of Gaussian Pyramids.
+    Inputs:
+        image: Input image.
+        scale_factor: Float or int representing the desired scale (e.g., 1.5, 3).
+    """
+    match scale_factor:
+        case int(f) | float(f) if f > 0:
+            if f == 1:
+                return image.copy()
+            
+            # cv2.INTER_AREA is best for shrinking (avoids moire patterns)
+            # cv2.INTER_LANCZOS4 is best for enlarging (sharper than CUBIC, minimal artifacting)
+            interp_method = cv2.INTER_LANCZOS4 if f > 1 else cv2.INTER_AREA
+            return cv2.resize(image, None, fx=f, fy=f, interpolation=interp_method)
+        case _:
+            raise ValueError("scale_factor must be a positive number.")
+
+# ---- 12. Annotation & Blending ---- #
+
+def annotate_text(image, text, position, font=cv2.FONT_HERSHEY_SIMPLEX, font_scale=1.0, color=(0, 255, 0), thickness=2):
+    """Draws text on an image for labeling detected objects or displaying metrics."""
+    image_copy = image.copy()
+    cv2.putText(image_copy, text, position, font, font_scale, color, thickness, cv2.LINE_AA)
+    return image_copy
+
+def blend_images(foreground, background, alpha=0.5):
+    """
+    Applies alpha blending to overlay images of the exact same size.
+    Useful for visualizing heatmaps or mask overlays on original images.
+    """
+    if foreground.shape != background.shape:
+        raise ValueError("Images must have the exact same dimensions and channels to blend.")
+    return cv2.addWeighted(foreground, alpha, background, 1 - alpha, 0)
+
+# ---- 13. Feature & Template Matching ---- #
+def match_template(image, template, threshold=0.8, method=cv2.TM_CCOEFF_NORMED):
+    """
+    Locates exact visual matches of a template inside a larger image.
+    Outputs the image with drawn bounding boxes and a list of matched coordinates.
+    """
+    if len(image.shape) == 3:
+        img_gray = convert_to_grayscale(image)
+    else:
+        img_gray = image.copy()
+        
+    template_gray = convert_to_grayscale(template) if len(template.shape) == 3 else template
+    w, h = template_gray.shape[::-1]
+    
+    res = cv2.matchTemplate(img_gray, template_gray, method)
+    locations = np.where(res >= threshold)
+    
+    image_copy = image.copy() if len(image.shape) == 3 else convert_gray_to_bgr(image)
+    boxes = []
+    
+    for pt in zip(*locations[::-1]):
+        cv2.rectangle(image_copy, pt, (pt[0] + w, pt[1] + h), (0, 0, 255), 2)
+        boxes.append((pt[0], pt[1], w, h))
+        
+    return image_copy, boxes
+
+# ---- 14. Hough Transforms ---- #
+
+def detect_lines_hough(image, edge_thresh1=50, edge_thresh2=150, rho=1, theta=np.pi/180, threshold=100, min_line_length=100, max_line_gap=10):
+    """Detects straight lines using the Probabilistic Hough Line Transform."""
+    edges = canny_edge_detection(image, edge_thresh1, edge_thresh2)
+    lines = cv2.HoughLinesP(edges, rho, theta, threshold, minLineLength=min_line_length, maxLineGap=max_line_gap)
+    
+    image_copy = image.copy() if len(image.shape) == 3 else convert_gray_to_bgr(image)
+    if lines is not None:
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            cv2.line(image_copy, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    return image_copy, lines
+
+def detect_circles_hough(image, dp=1.2, min_dist=30, param1=50, param2=30, min_radius=10, max_radius=100):
+    """Detects circles using the Hough Circle Transform."""
+    gray = convert_to_grayscale(image) if len(image.shape) == 3 else image.copy()
+    gray_blurred = cv2.medianBlur(gray, 5)
+    
+    circles = cv2.HoughCircles(gray_blurred, cv2.HOUGH_GRADIENT, dp, min_dist, param1=param1, param2=param2, minRadius=min_radius, maxRadius=max_radius)
+    
+    image_copy = image.copy() if len(image.shape) == 3 else convert_gray_to_bgr(image)
+    if circles is not None:
+        circles = np.uint16(np.around(circles))
+        for i in circles[0, :]:
+            # Draw the outer circle
+            cv2.circle(image_copy, (i[0], i[1]), i[2], (0, 255, 0), 2)
+            # Draw the center
+            cv2.circle(image_copy, (i[0], i[1]), 2, (0, 0, 255), 3)
+    return image_copy, circles
