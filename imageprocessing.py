@@ -26,29 +26,69 @@ import cv2
 import numpy as np
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
+from functools import wraps
+import os
+
+def load_image_paths(func):
+    """
+    Decorator that intercepts string file paths from LLM tool calls 
+    and converts them to OpenCV arrays before the function runs.
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Target parameter names that expect images
+        image_keys = {'image', 'mask', 'template', 'foreground', 'background', 'replacement_bg'}
+        
+        # 1. Convert positional arguments (e.g., image is usually at index 0)
+        new_args = list(args)
+        for i, arg in enumerate(new_args):
+            if isinstance(arg, str) and os.path.isfile(arg):
+                # IMREAD_UNCHANGED ensures masks load as grayscale and images as BGR
+                loaded_img = cv2.imread(arg, cv2.IMREAD_UNCHANGED)
+                if loaded_img is None:
+                    raise ValueError(f"Failed to load image at path: {arg}")
+                new_args[i] = loaded_img
+                
+        # 2. Convert keyword arguments
+        for key, value in kwargs.items():
+            if key in image_keys and isinstance(value, str):
+                if os.path.isfile(value):
+                    loaded_img = cv2.imread(value, cv2.IMREAD_UNCHANGED)
+                    if loaded_img is None:
+                        raise ValueError(f"Failed to load {key} at path: {value}")
+                    kwargs[key] = loaded_img
+                    
+        return func(*new_args, **kwargs)
+    return wrapper
 
 # ---- 1. Basic Color Transformations Functions ---- #
+@load_image_paths
 def convert_to_grayscale(image):
     """ Function that converts an image to grayscale. """
     return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
+@load_image_paths
 def convert_to_hsv(image):
     """ Function that converts an image to HSV color space. """
     return cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
+@load_image_paths
 def convert_to_lab(image):
     """ Function that converts an image to LAB color space. """
     return cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
 
+@load_image_paths
 def convert_gray_to_bgr(image):
     """ Function that converts a grayscale image to BGR color space. """
     return cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-
+    
+@load_image_paths
 def convert_gray_to_rgb(image):
     """ Function that converts a grayscale image to RGB color space. """
     return cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
 # ---- 2. Geometric Transformations Functions ---- #
+@load_image_paths
 def flip_image(image, flip_code):
     """ Function that flips an image. 
         flip_code: 0 for vertical, 1 for horizontal, -1 for both axes.
@@ -58,7 +98,8 @@ def flip_image(image, flip_code):
             return cv2.flip(image, flip_code)
         case _:
             raise ValueError("Invalid flip code. Must be 0, 1, or -1.")
-        
+
+@load_image_paths 
 def rotate_image(image, angle):
     """Function that Rotates an image by a given angle.
        angle: Angle in degrees. Positive values mean counter-clockwise rotation.
@@ -71,7 +112,8 @@ def rotate_image(image, angle):
             return cv2.warpAffine(image, M, (w, h))
         case _:
             raise ValueError("Invalid angle. Must be a number.")
-        
+
+@load_image_paths  
 def resize_image(image, width=None, height=None, fx=None, fy=None, interpolation=cv2.INTER_AREA):
     """Resizes an image using either (width, height) or (fx, fy)."""
     match (width, height, fx, fy):
@@ -82,12 +124,14 @@ def resize_image(image, width=None, height=None, fx=None, fy=None, interpolation
         case _:
             raise ValueError("Provide either both (width, height) as positive integers, or both (fx, fy) as positive numbers.")
 
+@load_image_paths
 def translate_image(image, x_shift, y_shift):
     """Shifts an image along the X and Y axes."""
     matrix = np.float32([[1, 0, x_shift], [0, 1, y_shift]])
     (h, w) = image.shape[:2]
     return cv2.warpAffine(image, matrix, (w, h))
 
+@load_image_paths
 def crop_image(image, x, y, w, h):
     """Crops an image based on bounding box coordinates."""
     if x < 0 or y < 0 or y+h > image.shape[0] or x+w > image.shape[1]:
@@ -95,6 +139,8 @@ def crop_image(image, x, y, w, h):
     return image[y:y+h, x:x+w]
         
 # ---- 3. Filtering & Smoothing Functions ---- #
+
+@load_image_paths
 def average_blur(image, kernel_size=(5, 5)):
     """
     Function that applies normal (average) blur to an image.
@@ -107,7 +153,8 @@ def average_blur(image, kernel_size=(5, 5)):
             return cv2.blur(image, kernel_size)
         case _:
             raise ValueError("Invalid kernel size. Must be a tuple of two positive integers (e.g., (5, 5)).")
-        
+
+@load_image_paths       
 def apply_gaussian_blur(image, kernel_size=(5, 5), sigma=0):
     """Applies Gaussian Blur with positive odd kernel validation."""
     match (kernel_size, sigma):
@@ -116,6 +163,7 @@ def apply_gaussian_blur(image, kernel_size=(5, 5), sigma=0):
         case _:
             raise ValueError("Invalid parameters. kernel_size must be two positive odd integers and sigma >= 0.")
 
+@load_image_paths
 def apply_median_blur(image, kernel_size=5):
     """ 
     Function that applies Median blur on input image.
@@ -129,6 +177,7 @@ def apply_median_blur(image, kernel_size=5):
         case _:
             raise ValueError("Invalid kernel size. Must be a single, positive odd integer greater than 1 (e.g., 3, 5, 7).")
 
+@load_image_paths
 def simple_filter(image, kernel_size=(5, 5), ddepth_val=-1):
     """ 
     Function that applies a simple averaging filter to remove noise.
@@ -142,7 +191,8 @@ def simple_filter(image, kernel_size=(5, 5), ddepth_val=-1):
             return cv2.filter2D(image, ddepth_val, kernel)
         case _:
             raise ValueError("Invalid kernel size. Must be a tuple of two positive integers (e.g., (5, 5)).")
-        
+
+@load_image_paths   
 def bilateral_filter(image, d_val=6, sigma_color=75, sigma_space=75):
     """Applies bilateral filtering to remove noise while preserving edges."""
     match (d_val, sigma_color, sigma_space):
@@ -150,7 +200,8 @@ def bilateral_filter(image, d_val=6, sigma_color=75, sigma_space=75):
             return cv2.bilateralFilter(image, d, float(sc), float(ss))
         case _:
             raise ValueError("Invalid parameters. d_val must be a positive int, and sigmas must be positive numbers.")
-        
+
+@load_image_paths  
 def box_filter(image, ddepth_val=-1, k_size=(5, 5), anchor=(-1, -1), normalize=True):
     """ 
     Function that applies a Box Filter to the image.
@@ -168,6 +219,8 @@ def box_filter(image, ddepth_val=-1, k_size=(5, 5), anchor=(-1, -1), normalize=T
             raise ValueError("Invalid kernel size. Must be a tuple of two positive integers (e.g., (5, 5)).")
         
 # ---- 4. Edge Detection Functions ---- #
+
+@load_image_paths
 def sobel_edge_detection(image, k_size=3):
     """Applies Sobel edge detection with safe kernel bounds."""
     if len(image.shape) == 3:
@@ -181,7 +234,8 @@ def sobel_edge_detection(image, k_size=3):
             return np.uint8(normalized_magnitude)
         case _:
             raise ValueError("Invalid k_size. Must be 1, 3, 5, or 7.")
-        
+
+@load_image_paths
 def canny_edge_detection(image, threshold1=100, threshold2=200):
     """ 
     Function that applies Canny Edge Detection on input image or video frame.
@@ -196,6 +250,7 @@ def canny_edge_detection(image, threshold1=100, threshold2=200):
         case _:
             raise ValueError("Invalid thresholds. Must be non-negative numbers.")
 
+@load_image_paths
 def laplacian_edge_detection(image, k_size=3):
     """Applies Laplacian edge detection without uint8 modulo wrap-around."""
     if len(image.shape) == 3:
@@ -207,6 +262,7 @@ def laplacian_edge_detection(image, k_size=3):
         case _:
             raise ValueError("Invalid k_size. Must be 1, 3, 5, or 7.")
 
+@load_image_paths
 def scharr_edge_detection(image):
     """
     Applies the Scharr operator for edge detection. Often provides better accuracy than Sobel.
@@ -225,6 +281,7 @@ def scharr_edge_detection(image):
     return np.uint8(magnitude_normalized)
 
 # ---- 5. Thresholding Techniques ---- #
+@load_image_paths
 def binary_thresholding(image, min_threshold, max_threshold, threshold_type=cv2.THRESH_BINARY):
     """
     Function to perform binary thresholding on input image or video frame.
@@ -247,6 +304,7 @@ def binary_thresholding(image, min_threshold, max_threshold, threshold_type=cv2.
         case _:
             raise ValueError("Invalid threshold values or threshold type. Threshold values must be non-negative numbers and threshold type must be cv2.THRESH_BINARY or cv2.THRESH_BINARY_INV.")
 
+@load_image_paths
 def adaptive_thresholding(image, max_value=255, adaptive_method=cv2.ADAPTIVE_THRESH_GAUSSIAN_C, threshold_type=cv2.THRESH_BINARY, block_size=11, C=2):
     """Performs adaptive thresholding with valid OpenCV threshold types."""
     if len(image.shape) == 3:
@@ -263,6 +321,7 @@ def adaptive_thresholding(image, max_value=255, adaptive_method=cv2.ADAPTIVE_THR
         case _:
             raise ValueError("Invalid parameters for adaptive thresholding.")
 
+@load_image_paths
 def otsu_thresholding(image, min_threshold=0, max_threshold=255, threshold_type=cv2.THRESH_BINARY):
     """Applies Otsu thresholding on an input image."""
     if len(image.shape) == 3:
@@ -282,7 +341,8 @@ def otsu_thresholding(image, min_threshold=0, max_threshold=255, threshold_type=
             return thresholded
         case _:
             raise ValueError("Invalid threshold values or threshold type for Otsu thresholding.")
-        
+
+@load_image_paths   
 def color_thresholding(image, lower_bound, upper_bound, num_of_thresholds=1):
     """Performs HSV color thresholding for 1 or 2 ranges."""
     if len(image.shape) != 3:
@@ -300,6 +360,7 @@ def color_thresholding(image, lower_bound, upper_bound, num_of_thresholds=1):
         case _:
             raise ValueError("Invalid num_of_thresholds. Must be 1 or 2.")
 
+@load_image_paths
 def color_extraction(image, lower_bound, upper_bound):
     """Extracts a specific color range from an image using HSV thresholding."""
     if len(image.shape) != 3:
@@ -308,6 +369,7 @@ def color_extraction(image, lower_bound, upper_bound):
     mask = cv2.inRange(hsv_image, lower_bound, upper_bound)
     return mask
 
+@load_image_paths
 def get_structuring_element(shape=cv2.MORPH_RECT, size=(5, 5)):
     """Returns a structuring element for morphological operations."""
     match (shape, size):
@@ -317,6 +379,8 @@ def get_structuring_element(shape=cv2.MORPH_RECT, size=(5, 5)):
             raise ValueError("Invalid shape or size. Shape must be an integer and size must be a tuple of two positive integers.")
 
 # ---- 6. Histogram Operations ---- #
+
+@load_image_paths
 def plot_histogram(image, image_color, plot_title='Image Histogram', x_label='Pixel Value', y_label='Frequency'):
     """ 
     Function to plot the image histogram for all color values.
@@ -357,6 +421,7 @@ def plot_histogram(image, image_color, plot_title='Image Histogram', x_label='Pi
         case _:
             raise ValueError("Invalid image color. It must be 0 for BGR or 1 for RGB.")
 
+@load_image_paths
 def calc_histogram(image, channels, mask, hist_size, ranges):
     """
     Function to calculate the histogram of the image
@@ -373,6 +438,7 @@ def calc_histogram(image, channels, mask, hist_size, ranges):
 
     return cv2.calcHist([image], channels, mask, hist_size, ranges)
 
+@load_image_paths
 def equalize_grayscale_histogram(image):
     """ 
     Enhances the contrast of a grayscale image using histogram equalization.
@@ -394,6 +460,7 @@ def equalize_grayscale_histogram(image):
     image_eq = cv2.equalizeHist(gray_img)
     return cv2.cvtColor(image_eq, cv2.COLOR_GRAY2BGR)
 
+@load_image_paths
 def equalize_color_histogram(image):
     """ 
     Enhances the contrast of a color image by performing histogram equalization
@@ -408,7 +475,8 @@ def equalize_color_histogram(image):
     l_eq = cv2.equalizeHist(l)
     lab_eq = cv2.merge((l_eq, a, b))
     return cv2.cvtColor(lab_eq, cv2.COLOR_LAB2BGR)
-    
+
+@load_image_paths
 def apply_clahe_grayscale(image, clip_limit=2.0, tile_grid_size=(8, 8)):
     """ 
     Function that applies CLAHE Histogram Equalization to enhance the contrast of the input grayscale image.
@@ -429,6 +497,7 @@ def apply_clahe_grayscale(image, clip_limit=2.0, tile_grid_size=(8, 8)):
         case _:
             raise ValueError("Invalid tile grid size. Must be a tuple of two positive integers (e.g., (8, 8)).")
 
+@load_image_paths
 def apply_clahe_color(image, clip_limit=2.0, tile_grid_size=(8, 8)):
     """
     Applies CLAHE to the L channel of the LAB color space for better color preservation.
@@ -450,6 +519,7 @@ def apply_clahe_color(image, clip_limit=2.0, tile_grid_size=(8, 8)):
         
 # ---- 7. Contours and Drawing + Perspective Warping ---- #
 
+@load_image_paths
 def find_and_draw_contours(image, mask, method, rtr_type=cv2.RETR_EXTERNAL, rtr_approximation=cv2.CHAIN_APPROX_SIMPLE, border_color=(0, 255, 0), line_thickness=3):
     """
     Finds and draws contours on an image using a provided binary mask without automatic thresholding.
@@ -498,6 +568,7 @@ def find_and_draw_contours(image, mask, method, rtr_type=cv2.RETR_EXTERNAL, rtr_
             
     return image_copy, contours
 
+@load_image_paths
 def find_and_draw_contours_thresh(image, method, thresh_mode='Normal', thresh_val=127, max_val=255, 
                                   threshold_type=cv2.THRESH_BINARY, adaptive_method=cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
                                   block_size=11, C=2, rtr_type=cv2.RETR_EXTERNAL, 
@@ -540,7 +611,7 @@ def find_and_draw_contours_thresh(image, method, thresh_mode='Normal', thresh_va
     # Delegate drawing and contour extraction to the base function
     return find_and_draw_contours(image_copy, thresh, method, rtr_type, rtr_approximation, border_color, line_thickness)
 
-
+@load_image_paths
 def perspective_warp(image, src_points, dst_points, output_size):
     """
     Applies a perspective warp to the input image based on provided source and destination points.
@@ -565,6 +636,7 @@ def perspective_warp(image, src_points, dst_points, output_size):
 
 # ---- 8. Color Extraction & Palette ---- #
 
+@load_image_paths
 def _centroid_histogram(clt):
     """ Helper function to create a normalized histogram of cluster labels. """
     numLabels = np.arange(0, len(np.unique(clt.labels_)) + 1)
@@ -573,6 +645,7 @@ def _centroid_histogram(clt):
     hist /= hist.sum()
     return hist
 
+@load_image_paths
 def _plot_colors(hist, centroids):
     """ Helper function to create a bar chart representing the frequency of each color. """
     # Create our blank barchart in RGB space
@@ -588,6 +661,7 @@ def _plot_colors(hist, centroids):
         
     return bar
 
+@load_image_paths
 def get_top_n_colors(image, num_colors=5, plot=0):
     """
     Extracts the top N dominant colors from an image using K-Means clustering.
@@ -641,6 +715,8 @@ def get_top_n_colors(image, num_colors=5, plot=0):
             raise ValueError("Invalid plot parameter. Use 1 to generate a plot, or 0 to skip.")
 
 # ---- 9. Morphological Operations ---- #
+
+@load_image_paths
 def morph_operation(image, operation_type, kernel_size=(5, 5), iterations=1):
     """Applies a specified morphological operation to the input image."""
     match (kernel_size, iterations):
@@ -668,6 +744,7 @@ def morph_operation(image, operation_type, kernel_size=(5, 5), iterations=1):
 
 # ---- 10. Background & Foreground Extractions ---- #
 
+@load_image_paths
 def grabcut_segmentation(image, rect=None, mask=None, iter_count=5, mode=cv2.GC_INIT_WITH_RECT):
     """
     Extracts the foreground from an image using the GrabCut algorithm.
@@ -709,6 +786,7 @@ def grabcut_segmentation(image, rect=None, mask=None, iter_count=5, mode=cv2.GC_
     extracted_image = image * binary_mask[:, :, np.newaxis]
     return extracted_image, binary_mask
 
+@load_image_paths
 def watershed_segmentation(image, border_color=(0, 0, 255)):
     """
     Applies the Watershed algorithm to separate overlapping objects and extract complex foregrounds.
@@ -754,6 +832,7 @@ def watershed_segmentation(image, border_color=(0, 0, 255)):
     
     return image_copy, markers
 
+@load_image_paths
 def get_background_subtractor(method='MOG2', history=500, var_threshold=16, detect_shadows=True):
     """
     Initializes a stateful background subtractor for video streams or frame sequences.
@@ -774,6 +853,7 @@ def get_background_subtractor(method='MOG2', history=500, var_threshold=16, dete
         case _:
             raise ValueError("Invalid background subtraction method. Must be 'MOG2' or 'KNN'.")
 
+@load_image_paths
 def replace_background_chroma(image, lower_bound, upper_bound, replacement_bg):
     """
     Removes a solid color background (Chroma Key/Green Screen) and replaces it with a new background.
@@ -821,6 +901,7 @@ def replace_background_chroma(image, lower_bound, upper_bound, replacement_bg):
 
 # ---- 11. Image Pyramids & Resampling ---- #
 
+@load_image_paths
 def upsample(image, scale_factor=2):
     """
     Upsamples the input image by a power of 2 using a Gaussian Pyramid.
@@ -838,6 +919,7 @@ def upsample(image, scale_factor=2):
         case _:
             raise ValueError("Invalid scale_factor. Must be an integer > 1 and a power of 2 (e.g., 2, 4, 8).")
 
+@load_image_paths
 def downsample(image, scale_factor=2):
     """
     Downsamples the input image by a power of 2 using a Gaussian Pyramid.
@@ -855,6 +937,7 @@ def downsample(image, scale_factor=2):
         case _:
             raise ValueError("Invalid scale_factor. Must be an integer > 1 and a power of 2 (e.g., 2, 4, 8).")
 
+@load_image_paths
 def build_laplacian_pyramid(image, levels=3):
     """
     Builds a Laplacian Pyramid, capturing the high-frequency edge data lost during downsampling.
@@ -893,6 +976,7 @@ def build_laplacian_pyramid(image, levels=3):
         case _:
             raise ValueError("Levels must be an integer greater than 0.")
 
+@load_image_paths
 def resample_high_quality(image, scale_factor):
     """
     Resamples an image to any arbitrary scale factor using high-fidelity interpolation, 
@@ -915,12 +999,14 @@ def resample_high_quality(image, scale_factor):
 
 # ---- 12. Annotation & Blending ---- #
 
+@load_image_paths
 def annotate_text(image, text, position, font=cv2.FONT_HERSHEY_SIMPLEX, font_scale=1.0, color=(0, 255, 0), thickness=2):
     """Draws text on an image for labeling detected objects or displaying metrics."""
     image_copy = image.copy()
     cv2.putText(image_copy, text, position, font, font_scale, color, thickness, cv2.LINE_AA)
     return image_copy
 
+@load_image_paths
 def blend_images(foreground, background, alpha=0.5):
     """
     Applies alpha blending to overlay images of the exact same size.
@@ -931,6 +1017,8 @@ def blend_images(foreground, background, alpha=0.5):
     return cv2.addWeighted(foreground, alpha, background, 1 - alpha, 0)
 
 # ---- 13. Feature & Template Matching ---- #
+
+@load_image_paths
 def match_template(image, template, threshold=0.8, method=cv2.TM_CCOEFF_NORMED):
     """
     Locates exact visual matches of a template inside a larger image.
@@ -958,6 +1046,7 @@ def match_template(image, template, threshold=0.8, method=cv2.TM_CCOEFF_NORMED):
 
 # ---- 14. Hough Transforms ---- #
 
+@load_image_paths
 def detect_lines_hough(image, edge_thresh1=50, edge_thresh2=150, rho=1, theta=np.pi/180, threshold=100, min_line_length=100, max_line_gap=10):
     """Detects straight lines using the Probabilistic Hough Line Transform."""
     edges = canny_edge_detection(image, edge_thresh1, edge_thresh2)
@@ -970,6 +1059,7 @@ def detect_lines_hough(image, edge_thresh1=50, edge_thresh2=150, rho=1, theta=np
             cv2.line(image_copy, (x1, y1), (x2, y2), (0, 255, 0), 2)
     return image_copy, lines
 
+@load_image_paths
 def detect_circles_hough(image, dp=1.2, min_dist=30, param1=50, param2=30, min_radius=10, max_radius=100):
     """Detects circles using the Hough Circle Transform."""
     gray = convert_to_grayscale(image) if len(image.shape) == 3 else image.copy()

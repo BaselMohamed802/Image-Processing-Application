@@ -1,21 +1,23 @@
 """
-Image Processing Tool Calls for LLM Integration
+Image Processing Tool Calls for LLM Integration (Strict Enum Enforcement)
 Description: This file defines the JSON schema tool calls for the imageprocessing.py library.
 Author: Basel Mohamed Mostafa Sayed
+Note: All OpenCV constants and restricted modes are now strictly enforced using JSON Schema 'enum'.
 """
 
 # ==============================================================================
 # OPEN CV CONSTANT REFERENCE FOR LLM:
 # Since LLMs cannot import cv2, use these integer values when a parameter 
-# asks for an OpenCV constant:
+# asks for an OpenCV constant. (Note: The schema 'enum' will now physically 
+# prevent the LLM from passing anything outside these lists).
 # 
-# Threshold Types: THRESH_BINARY=0, THRESH_BINARY_INV=1, THRESH_TRUNC=2, THRESH_TOZERO=3, THRESH_TOZERO_INV=4
-# Adaptive Methods: ADAPTIVE_THRESH_MEAN_C=0, ADAPTIVE_THRESH_GAUSSIAN_C=1
-# Contour Retrieval: RETR_EXTERNAL=0, RETR_LIST=1, RETR_CCOMP=2, RETR_TREE=3
-# Contour Approx: CHAIN_APPROX_NONE=1, CHAIN_APPROX_SIMPLE=2
-# GrabCut Modes: GC_INIT_WITH_RECT=0, GC_INIT_WITH_MASK=1
-# Morph Shapes: MORPH_RECT=0, MORPH_CROSS=1, MORPH_ELLIPSE=2
-# Template Match: TM_CCOEFF_NORMED=5
+# Threshold Types: 0=BINARY, 1=BINARY_INV, 2=TRUNC, 3=TOZERO, 4=TOZERO_INV
+# Adaptive Methods: 0=MEAN_C, 1=GAUSSIAN_C
+# Contour Retrieval: 0=EXTERNAL, 1=LIST, 2=CCOMP, 3=TREE
+# Contour Approx: 1=NONE, 2=SIMPLE
+# GrabCut Modes: 0=INIT_WITH_RECT, 1=INIT_WITH_MASK
+# Morph Shapes: 0=RECT, 1=CROSS, 2=ELLIPSE
+# Template Match: 5=TM_CCOEFF_NORMED
 # ==============================================================================
 
 # ---- 1. Basic Color Transformations ----
@@ -92,7 +94,11 @@ flip_image_tool = {
         "type": "object",
         "properties": {
             "image": {"type": "string", "description": "The input image file path or identifier."},
-            "flip_code": {"type": "integer", "description": "0 for vertical, 1 for horizontal, -1 for both axes."}
+            "flip_code": {
+                "type": "integer", 
+                "description": "0 for vertical, 1 for horizontal, -1 for both axes.",
+                "enum": [0, 1, -1]
+            }
         },
         "required": ["image", "flip_code"],
         "additionalProperties": False
@@ -261,7 +267,11 @@ sobel_edge_detection_tool = {
         "type": "object",
         "properties": {
             "image": {"type": "string", "description": "The input image file path or identifier."},
-            "k_size": {"type": "integer", "description": "Size of the extended Sobel kernel. Must be 1, 3, 5, or 7."}
+            "k_size": {
+                "type": "integer", 
+                "description": "Size of the extended Sobel kernel.",
+                "enum": [1, 3, 5, 7]
+            }
         },
         "required": ["image"],
         "additionalProperties": False
@@ -290,7 +300,11 @@ laplacian_edge_detection_tool = {
         "type": "object",
         "properties": {
             "image": {"type": "string", "description": "The input image file path or identifier."},
-            "k_size": {"type": "integer", "description": "Aperture size used to compute the second-derivative filters. Must be 1, 3, 5, or 7."}
+            "k_size": {
+                "type": "integer", 
+                "description": "Aperture size used to compute the second-derivative filters.",
+                "enum": [1, 3, 5, 7]
+            }
         },
         "required": ["image"],
         "additionalProperties": False
@@ -313,14 +327,18 @@ scharr_edge_detection_tool = {
 # ---- 5. Thresholding Techniques ----
 binary_thresholding_tool = {
     "name": "binary_thresholding",
-    "description": "Applies fixed-level thresholding. Threshold type must be an integer (0=BINARY, 1=BINARY_INV, 2=TRUNC, 3=TOZERO, 4=TOZERO_INV).",
+    "description": "Applies fixed-level thresholding.",
     "parameters": {
         "type": "object",
         "properties": {
             "image": {"type": "string", "description": "The input image file path or identifier."},
             "min_threshold": {"type": "number", "description": "The threshold value."},
             "max_threshold": {"type": "number", "description": "The maximum value to use on pixels that pass the threshold."},
-            "threshold_type": {"type": "integer", "description": "OpenCV threshold type integer (0 to 4)."}
+            "threshold_type": {
+                "type": "integer", 
+                "description": "0=BINARY, 1=BINARY_INV, 2=TRUNC, 3=TOZERO, 4=TOZERO_INV.",
+                "enum": [0, 1, 2, 3, 4]
+            }
         },
         "required": ["image", "min_threshold", "max_threshold"],
         "additionalProperties": False
@@ -335,8 +353,16 @@ adaptive_thresholding_tool = {
         "properties": {
             "image": {"type": "string", "description": "The input image file path or identifier."},
             "max_value": {"type": "number", "description": "Non-zero value assigned to pixels for THRESH_BINARY."},
-            "adaptive_method": {"type": "integer", "description": "0 for MEAN_C, 1 for GAUSSIAN_C."},
-            "threshold_type": {"type": "integer", "description": "0 for BINARY, 1 for BINARY_INV."},
+            "adaptive_method": {
+                "type": "integer", 
+                "description": "0 for MEAN_C, 1 for GAUSSIAN_C.",
+                "enum": [0, 1]
+            },
+            "threshold_type": {
+                "type": "integer", 
+                "description": "0 for BINARY, 1 for BINARY_INV.",
+                "enum": [0, 1]
+            },
             "block_size": {"type": "integer", "description": "Size of a pixel neighborhood. Must be odd and > 1 (e.g., 3, 5, 11)."},
             "C": {"type": "number", "description": "Constant subtracted from the mean or weighted mean."}
         },
@@ -354,7 +380,11 @@ otsu_thresholding_tool = {
             "image": {"type": "string", "description": "The input image file path or identifier."},
             "min_threshold": {"type": "number", "description": "Usually 0 for Otsu."},
             "max_threshold": {"type": "number", "description": "Usually 255 for Otsu."},
-            "threshold_type": {"type": "integer", "description": "Base threshold type integer (0 to 4). Otsu flag is added automatically."}
+            "threshold_type": {
+                "type": "integer", 
+                "description": "Base threshold type integer (0 to 4). Otsu flag is added automatically.",
+                "enum": [0, 1, 2, 3, 4]
+            }
         },
         "required": ["image"],
         "additionalProperties": False
@@ -370,7 +400,11 @@ color_thresholding_tool = {
             "image": {"type": "string", "description": "The input BGR image file path or identifier."},
             "lower_bound": {"type": "array", "items": {"type": "integer"}, "description": "Lower HSV bound as [H, S, V], e.g., [0, 50, 50]. If 2 ranges, pass [[H,S,V], [H,S,V]]."},
             "upper_bound": {"type": "array", "items": {"type": "integer"}, "description": "Upper HSV bound as [H, S, V], e.g., [20, 255, 255]. If 2 ranges, pass [[H,S,V], [H,S,V]]."},
-            "num_of_thresholds": {"type": "integer", "description": "1 for a single range, 2 for two combined ranges."}
+            "num_of_thresholds": {
+                "type": "integer", 
+                "description": "1 for a single range, 2 for two combined ranges.",
+                "enum": [1, 2]
+            }
         },
         "required": ["image", "lower_bound", "upper_bound"],
         "additionalProperties": False
@@ -398,7 +432,11 @@ get_structuring_element_tool = {
     "parameters": {
         "type": "object",
         "properties": {
-            "shape": {"type": "integer", "description": "0 for RECT, 1 for CROSS, 2 for ELLIPSE."},
+            "shape": {
+                "type": "integer", 
+                "description": "0 for RECT, 1 for CROSS, 2 for ELLIPSE.",
+                "enum": [0, 1, 2]
+            },
             "size": {"type": "array", "items": {"type": "integer"}, "description": "Kernel size as [width, height], e.g., [5, 5]."}
         },
         "required": ["size"],
@@ -414,7 +452,11 @@ plot_histogram_tool = {
         "type": "object",
         "properties": {
             "image": {"type": "string", "description": "The input image file path or identifier."},
-            "image_color": {"type": "integer", "description": "0 for BGR, 1 for RGB, 2 for Grayscale."},
+            "image_color": {
+                "type": "integer", 
+                "description": "0 for BGR, 1 for RGB, 2 for Grayscale.",
+                "enum": [0, 1, 2]
+            },
             "plot_title": {"type": "string", "description": "Title of the plot."},
             "x_label": {"type": "string", "description": "X-axis label."},
             "y_label": {"type": "string", "description": "Y-axis label."}
@@ -506,9 +548,21 @@ find_and_draw_contours_tool = {
         "properties": {
             "image": {"type": "string", "description": "The input image file path or identifier."},
             "mask": {"type": "string", "description": "The binary mask image path or identifier used to find contours."},
-            "method": {"type": "string", "description": "Drawing method: 'Rectangle', 'Circle', 'Ellipse', 'Polygon', or 'Normal'."},
-            "rtr_type": {"type": "integer", "description": "Contour retrieval mode (0=EXTERNAL, 1=LIST, 2=CCOMP, 3=TREE)."},
-            "rtr_approximation": {"type": "integer", "description": "Contour approximation method (1=NONE, 2=SIMPLE)."},
+            "method": {
+                "type": "string", 
+                "description": "Drawing method for the contours.",
+                "enum": ['Rectangle', 'Circle', 'Ellipse', 'Polygon', 'Normal']
+            },
+            "rtr_type": {
+                "type": "integer", 
+                "description": "Contour retrieval mode (0=EXTERNAL, 1=LIST, 2=CCOMP, 3=TREE).",
+                "enum": [0, 1, 2, 3]
+            },
+            "rtr_approximation": {
+                "type": "integer", 
+                "description": "Contour approximation method (1=NONE, 2=SIMPLE).",
+                "enum": [1, 2]
+            },
             "border_color": {"type": "array", "items": {"type": "integer"}, "description": "BGR color tuple, e.g., [0, 255, 0] for green."},
             "line_thickness": {"type": "integer", "description": "Thickness of the drawn contours."}
         },
@@ -524,16 +578,40 @@ find_and_draw_contours_thresh_tool = {
         "type": "object",
         "properties": {
             "image": {"type": "string", "description": "The input image file path or identifier."},
-            "method": {"type": "string", "description": "Drawing method: 'Rectangle', 'Circle', 'Ellipse', 'Polygon', or 'Normal'."},
-            "thresh_mode": {"type": "string", "description": "Thresholding mode: 'Normal', 'Adaptive', or 'Otsu'."},
+            "method": {
+                "type": "string", 
+                "description": "Drawing method for the contours.",
+                "enum": ['Rectangle', 'Circle', 'Ellipse', 'Polygon', 'Normal']
+            },
+            "thresh_mode": {
+                "type": "string", 
+                "description": "Thresholding mode.",
+                "enum": ['Normal', 'Adaptive', 'Otsu']
+            },
             "thresh_val": {"type": "number", "description": "Threshold value for Normal mode."},
             "max_val": {"type": "number", "description": "Maximum value (usually 255)."},
-            "threshold_type": {"type": "integer", "description": "OpenCV threshold type integer (0 to 4)."},
-            "adaptive_method": {"type": "integer", "description": "0 for MEAN_C, 1 for GAUSSIAN_C."},
+            "threshold_type": {
+                "type": "integer", 
+                "description": "OpenCV threshold type integer (0 to 4).",
+                "enum": [0, 1, 2, 3, 4]
+            },
+            "adaptive_method": {
+                "type": "integer", 
+                "description": "0 for MEAN_C, 1 for GAUSSIAN_C.",
+                "enum": [0, 1]
+            },
             "block_size": {"type": "integer", "description": "Block size for adaptive thresholding."},
             "C": {"type": "number", "description": "Constant for adaptive thresholding."},
-            "rtr_type": {"type": "integer", "description": "Contour retrieval mode."},
-            "rtr_approximation": {"type": "integer", "description": "Contour approximation method."},
+            "rtr_type": {
+                "type": "integer", 
+                "description": "Contour retrieval mode.",
+                "enum": [0, 1, 2, 3]
+            },
+            "rtr_approximation": {
+                "type": "integer", 
+                "description": "Contour approximation method.",
+                "enum": [1, 2]
+            },
             "border_color": {"type": "array", "items": {"type": "integer"}, "description": "BGR color tuple."},
             "line_thickness": {"type": "integer", "description": "Thickness of the drawn contours."}
         },
@@ -567,7 +645,11 @@ get_top_n_colors_tool = {
         "properties": {
             "image": {"type": "string", "description": "The input BGR image file path or identifier."},
             "num_colors": {"type": "integer", "description": "Number of dominant colors to extract."},
-            "plot": {"type": "integer", "description": "1 to return a bar chart image along with colors, 0 to return only the color list."}
+            "plot": {
+                "type": "integer", 
+                "description": "1 to return a bar chart image along with colors, 0 to return only the color list.",
+                "enum": [0, 1]
+            }
         },
         "required": ["image"],
         "additionalProperties": False
@@ -582,7 +664,11 @@ morph_operation_tool = {
         "type": "object",
         "properties": {
             "image": {"type": "string", "description": "The input image file path or identifier."},
-            "operation_type": {"type": "string", "description": "One of: 'Erosion', 'Dilation', 'Opening', 'Closing', 'Gradient', 'Top Hat', 'Black Hat'."},
+            "operation_type": {
+                "type": "string", 
+                "description": "The specific morphological operation to perform.",
+                "enum": ['Erosion', 'Dilation', 'Opening', 'Closing', 'Gradient', 'Top Hat', 'Black Hat']
+            },
             "kernel_size": {"type": "array", "items": {"type": "integer"}, "description": "Kernel size as [width, height], e.g., [5, 5]."},
             "iterations": {"type": "integer", "description": "Number of times erosion/dilation is applied."}
         },
@@ -602,7 +688,11 @@ grabcut_segmentation_tool = {
             "rect": {"type": "array", "items": {"type": "integer"}, "description": "Bounding box [x, y, w, h] for GC_INIT_WITH_RECT mode."},
             "mask": {"type": "string", "description": "Mask image path for GC_INIT_WITH_MASK mode."},
             "iter_count": {"type": "integer", "description": "Number of iterations the algorithm should run."},
-            "mode": {"type": "integer", "description": "0 for GC_INIT_WITH_RECT, 1 for GC_INIT_WITH_MASK."}
+            "mode": {
+                "type": "integer", 
+                "description": "0 for GC_INIT_WITH_RECT, 1 for GC_INIT_WITH_MASK.",
+                "enum": [0, 1]
+            }
         },
         "required": ["image"],
         "additionalProperties": False
@@ -629,7 +719,11 @@ get_background_subtractor_tool = {
     "parameters": {
         "type": "object",
         "properties": {
-            "method": {"type": "string", "description": "'MOG2' or 'KNN'."},
+            "method": {
+                "type": "string", 
+                "description": "The background subtraction algorithm to use.",
+                "enum": ['MOG2', 'KNN']
+            },
             "history": {"type": "integer", "description": "Length of the history."},
             "var_threshold": {"type": "number", "description": "Variance threshold for pixel classification (MOG2 only)."},
             "detect_shadows": {"type": "boolean", "description": "Whether to detect and mark shadows."}
@@ -756,7 +850,11 @@ match_template_tool = {
             "image": {"type": "string", "description": "The main input image file path or identifier."},
             "template": {"type": "string", "description": "The template image file path or identifier to search for."},
             "threshold": {"type": "number", "description": "Confidence threshold for matches (0.0 to 1.0)."},
-            "method": {"type": "integer", "description": "Matching method. 5 for TM_CCOEFF_NORMED."}
+            "method": {
+                "type": "integer", 
+                "description": "Matching method. 5 for TM_CCOEFF_NORMED.",
+                "enum": [5]
+            }
         },
         "required": ["image", "template"],
         "additionalProperties": False
